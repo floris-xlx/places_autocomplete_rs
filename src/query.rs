@@ -196,6 +196,27 @@ pub fn query_street(query: &str) -> Value {
     let response = if !result.is_empty() {
         let first_street = &result[0].street;
         let house_numbers: Vec<&str> = result.iter().map(|row| row.house_number.as_str()).collect();
+
+        // Check if the query ends with a number
+        if let Some(last_char) = query.chars().last() {
+            if last_char.is_digit(10) {
+                let query_number = query.split_whitespace().last().unwrap_or("");
+                if house_numbers.contains(&query_number) {
+                    let filtered_result: Vec<Row> = result
+                        .into_iter()
+                        .filter(|row| row.house_number == query_number)
+                        .cloned()
+                        .collect();
+                    return json!({
+                        "entries": filtered_result,
+                        "house_numbers": vec![query_number],
+                        "total_entries": filtered_result.len(),
+                        "consistent_street": filtered_result.iter().all(|entry| entry.street == *first_street)
+                    });
+                }
+            }
+        }
+
         json!({
             "entries": result,
             "house_numbers": house_numbers,
