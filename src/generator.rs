@@ -60,56 +60,34 @@ pub async fn process_csv_files() -> Result<(), Box<dyn std::error::Error + Send 
     let mut line_count = 0;
     let progress_bar = ProgressBar::new(0); // Will be updated later
 
-    loop {
-        // Open the CSV file for reading
-        let mut rdr = csv::Reader::from_path(file_path)?;
-        let mut writer = csv::Writer::from_path(output_file_path)?;
+    // Open the CSV file for reading
+    let mut rdr = csv::Reader::from_path(file_path)?;
+    let mut writer = csv::Writer::from_path(output_file_path)?;
 
-        // Write headers to the output file
-        if line_count == 0 {
-            writer.write_record(&headers)?;
-        }
+    // Write headers to the output file
+    writer.write_record(&headers)?;
 
-        // Skip already processed lines
-        for _ in 0..line_count {
-            rdr.records().next();
-        }
+    for result in rdr.records() {
+        let record = result?;
+        let line = record.iter().collect::<Vec<&str>>().join(",");
+        let enumerated_lines = enumerate_house_numbers(&line);
 
-        let mut batch_count = 0;
-        for result in rdr.records() {
-            let record = result?;
-            let line = record.iter().collect::<Vec<&str>>().join(",");
-            let enumerated_lines = enumerate_house_numbers(&line);
+        for enumerated_line in enumerated_lines {
+            writer.write_record(enumerated_line.split(','))?;
+            line_count += 1;
+            progress_bar.inc(1);
 
-            for enumerated_line in enumerated_lines {
-                writer.write_record(enumerated_line.split(','))?;
-                line_count += 1;
-                batch_count += 1;
-                progress_bar.inc(1);
-
-                // Check if the file has reached the maximum line count
-                if line_count >= 5_000_000 {
-                    writer.flush()?;
-                    info!("Reached maximum line count for file: {}", output_file_path);
-                    progress_bar.finish_with_message("Processing complete");
-                    return Ok(());
-                }
+            // Check if the file has reached the maximum line count
+            if line_count >= 5_000_000 {
+                writer.flush()?;
+                info!("Reached maximum line count for file: {}", output_file_path);
+                progress_bar.finish_with_message("Processing complete");
+                return Ok(());
             }
-
-            // Close and reopen the reader every 10,000 lines
-            if batch_count >= 10_000 {
-                break;
-            }
-        }
-
-        writer.flush()?;
-
-        // If no more records, break the loop
-        if batch_count < 10_000 {
-            break;
         }
     }
 
+    writer.flush()?;
     progress_bar.finish_with_message("Processing complete");
     info!("Total lines written: {}", line_count);
 
