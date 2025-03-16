@@ -1,0 +1,29 @@
+name: XBP helper
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Read xbp.json values
+        id: parse_json
+        run: |
+          PROJECT_NAME=$(jq -r '.project_name' .xbp/xbp.json)
+          PORT=$(jq -r '.port' .xbp/xbp.json)
+          BUILD_DIR=$(jq -r '.build_dir' .xbp/xbp.json)
+          
+          echo "PROJECT_NAME=$PROJECT_NAME" >> $GITHUB_ENV
+          echo "PORT=$PORT" >> $GITHUB_ENV
+          echo "BUILD_DIR=$BUILD_DIR" >> $GITHUB_ENV
+
+      - name: Run redeploy.sh
+        run: |
+          chmod +x .xbp/redeploy.sh
+          .xbp/redeploy.sh --app-name "$PROJECT_NAME" --port "$PORT" --app-dir "$BUILD_DIR"
