@@ -17,6 +17,8 @@ pub struct Row {
     pub neighborhood: String,
     pub municipality: String,
     pub province: String,
+    pub latitude: f64,
+    pub longitude: f64,
 }
 
 #[derive(Debug)]
@@ -183,4 +185,57 @@ pub fn query_street(query: &str) -> Value {
     );
 
     response
+}
+
+
+pub fn query_by_coordinates(latitude: f64, longitude: f64) -> Value {
+    let start_time = Instant::now();
+    info!("Querying closest location to coordinates: ({}, {})", latitude, longitude);
+
+    let data = LOCATION_DATA.read().expect("Failed to acquire read lock");
+
+    let mut closest_entry: Option<&Row> = None;
+    let mut min_distance = f64::MAX;
+
+    for rows in data.postal_map.values().chain(data.street_map.values()) {
+        for row in rows {
+            let row_latitude: f64 = row.latitude;
+            let row_longitude: f64 = row.longitude;
+
+            let distance = haversine_distance(latitude, longitude, row_latitude, row_longitude);
+            if distance < min_distance {
+                min_distance = distance;
+                closest_entry = Some(row);
+            }
+        }
+    }
+
+    let response = match closest_entry {
+        Some(entry) => json!({
+            "entry": entry,
+            "distance": min_distance
+        }),
+        None => json!({ "entry": null, "distance": null }),
+    };
+
+    info!(
+        "Query result for coordinates ({}, {}): closest entry found in {} ms",
+        latitude,
+        longitude,
+        start_time.elapsed().as_millis()
+    );
+
+    response
+}
+
+fn haversine_distance(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
+    let r = 6371.0; // Radius of the Earth in kilometers
+    let dlat = (lat2 - lat1).to_radians();
+    let dlon = (lon2 - lon1).to_radians();
+
+    let a = (dlat / 2.0).sin().powi(2)
+        + lat1.to_radians().cos() * lat2.to_radians().cos() * (dlon / 2.0).sin().powi(2);
+    let c = 2.0 * a.sqrt().atan2((1.0 - a).sqrt());
+
+    r * c
 }

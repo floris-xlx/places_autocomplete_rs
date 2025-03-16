@@ -23,11 +23,29 @@ use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::Mutex;
 
-
 use places_autocomplete_rs::SharedCache;
 
 use places_autocomplete_rs::api::actix_client::ping;
-use places_autocomplete_rs::query::{initialize_location_data, query_postal_code, query_street};
+use places_autocomplete_rs::query::{
+    initialize_location_data, query_by_coordinates, query_postal_code, query_street,
+};
+
+#[get("/search_by_coordinates")]
+async fn search_by_coordinates(
+    web::Query(info): web::Query<HashMap<String, String>>,
+) -> impl Responder {
+    let response = if let (Some(lat), Some(lon)) = (info.get("latitude"), info.get("longitude")) {
+        if let (Ok(latitude), Ok(longitude)) = (lat.parse::<f64>(), lon.parse::<f64>()) {
+            query_by_coordinates(latitude, longitude)
+        } else {
+            json!({ "error": "Invalid latitude or longitude format" })
+        }
+    } else {
+        json!({ "error": "Missing latitude or longitude parameters" })
+    };
+
+    HttpResponse::Ok().json(response)
+}
 
 #[get("/search")]
 async fn search(
@@ -42,7 +60,10 @@ async fn search(
         let mut location_data = query_postal_code(postal_code);
         if let Some(house_number) = info.get("house_number") {
             if let Some(entry) = location_data.get_mut("entry") {
-                if entry.get("house_number").map_or(false, |hn| hn != house_number) {
+                if entry
+                    .get("house_number")
+                    .map_or(false, |hn| hn != house_number)
+                {
                     location_data = json!({});
                 }
             }
@@ -67,7 +88,9 @@ async fn search(
             if let Some(entries) = location_data.get_mut("entries") {
                 if let Some(entries_array) = entries.as_array_mut() {
                     entries_array.retain(|entry| {
-                        entry.get("house_number").map_or(false, |hn| hn == house_number)
+                        entry
+                            .get("house_number")
+                            .map_or(false, |hn| hn == house_number)
                     });
                 }
             }
@@ -135,7 +158,7 @@ async fn main() -> Result<()> {
             // endpoints // docs
             .service(ping)
             .service(search)
-          
+            .service(search_by_coordinates)
     })
     .workers(4)
     .bind(("0.0.0.0", port))?
