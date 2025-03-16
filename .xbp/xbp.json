@@ -1,3 +1,6 @@
 {
-    "port": 4444
+    "port": 4444,
+    "project_name": "api.places.suitsbooks.nl",
+    "build_dir": "/home/floris-xlx/repos/places_autocomplete_rs",
+    "url": "https://api.places.suitsbooks.nl"
 }
