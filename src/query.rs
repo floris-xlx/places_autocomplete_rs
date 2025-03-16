@@ -220,7 +220,7 @@ pub fn query_by_coordinates(latitude: f64, longitude: f64) -> Value {
         if seen_streets.insert(&entry.street) {
             unique_streets.push((entry, distance));
         }
-        if unique_streets.len() == 20 {
+        if unique_streets.len() == 100 {
             break;
         }
     }
