@@ -51,12 +51,12 @@ pub async fn process_csv_files(
         }
     }
     info!("Lines read successfully");
-
+    
     fn list_files_in_directory(directory: &str) -> std::io::Result<Vec<String>> {
-        let mut file_list = Vec::new();
+        let mut file_list: Vec<String> = Vec::new();
         for entry in std::fs::read_dir(directory)? {
-            let entry = entry?;
-            let path = entry.path();
+            let entry: std::fs::DirEntry = entry?;
+            let path: std::path::PathBuf = entry.path();
             if path.is_file() {
                 if let Some(file_name) = path.file_name().and_then(|name| name.to_str()) {
                     file_list.push(file_name.to_string());
@@ -68,9 +68,9 @@ pub async fn process_csv_files(
 
     // Initialize the unique line count
     let mut unique_line_count = 0;
-    let mut file_index = {
-        let files = list_files_in_directory("./data_split")?;
-        let mut max_index = 0;
+    let mut file_index: usize = {
+        let files: Vec<String> = list_files_in_directory("./data_split")?;
+        let mut max_index: usize = 0;
 
         for file in files {
             if let Some(index_str) = file.strip_prefix("part_").and_then(|s| s.strip_suffix(".csv")) {
@@ -90,21 +90,21 @@ pub async fn process_csv_files(
     };
 
     // Open the CSV file for reading
-    let mut rdr = csv::Reader::from_path(file_path)?;
-    let mut output_file_path = format!("./data/data_nl_{}.csv", file_index);
+    let mut rdr: csv::Reader<File> = csv::Reader::from_path(file_path)?;
+    let mut output_file_path: String = format!("./data/data_nl_{}.csv", file_index);
     create_file_if_not_exists(&output_file_path)?;
-    let mut writer = csv::Writer::from_path(&output_file_path)?;
+    let mut writer: csv::Writer<File> = csv::Writer::from_path(&output_file_path)?;
 
     // Write headers to the output file
     writer.write_record(&headers)?;
 
     // Initialize a set to track unique lines
-    let mut unique_lines = HashSet::new();
+    let mut unique_lines: HashSet<String> = HashSet::new();
 
     for result in rdr.records() {
-        let record = result?;
-        let line = record.iter().collect::<Vec<&str>>().join(",");
-        let enumerated_lines = enumerate_house_numbers(&line);
+        let record: csv::StringRecord = result?;
+        let line: String = record.iter().collect::<Vec<&str>>().join(",");
+        let enumerated_lines: Vec<String> = enumerate_house_numbers(&line);
 
         for enumerated_line in enumerated_lines {
             if unique_lines.insert(enumerated_line.clone()) {
