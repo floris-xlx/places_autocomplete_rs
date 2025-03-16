@@ -24,7 +24,7 @@ pub struct Row {
 #[derive(Debug)]
 pub struct LocationData {
     postal_map: HashMap<char, HashMap<String, Vec<Row>>>, // Indexed by first character of postal code
-    street_map: HashMap<String, Vec<Row>>, // Street name lookups
+    street_map: HashMap<String, Vec<Row>>,                // Street name lookups
 }
 
 impl LocationData {
@@ -126,7 +126,10 @@ pub fn initialize_location_data(folder: &str) {
 
 pub fn query_postal_code(postal_code: &str) -> Value {
     let start_time = Instant::now();
-    let postal_code = postal_code.replace('_', "").replace('-', "").replace(' ', "");
+    let postal_code = postal_code
+        .replace('_', "")
+        .replace('-', "")
+        .replace(' ', "");
     info!("Querying postal code: {}", postal_code);
 
     let data = LOCATION_DATA.read().expect("Failed to acquire read lock");
@@ -134,7 +137,8 @@ pub fn query_postal_code(postal_code: &str) -> Value {
     let result: Vec<&Row> = if postal_code.len() == 4 && postal_code.chars().all(char::is_numeric) {
         // Partial match for postal codes with only 4 digits
         if let Some(first_char) = postal_code.chars().next() {
-            data.postal_map.get(&first_char)
+            data.postal_map
+                .get(&first_char)
                 .map(|map| {
                     map.iter()
                         .filter(|(key, _)| key.starts_with(&postal_code))
@@ -155,7 +159,8 @@ pub fn query_postal_code(postal_code: &str) -> Value {
     let response = if !result.is_empty() {
         let first_street = &result[0].street;
         if result.iter().all(|entry| entry.street == *first_street) {
-            let house_numbers: Vec<&str> = result.iter().map(|row| row.house_number.as_str()).collect();
+            let house_numbers: Vec<&str> =
+                result.iter().map(|row| row.house_number.as_str()).collect();
             json!({
                 "entry": result[0],
                 "house_numbers": house_numbers,
@@ -190,21 +195,15 @@ pub fn query_street(query: &str) -> Value {
 
     let response = if !result.is_empty() {
         let first_street = &result[0].street;
-        if result.iter().all(|entry| entry.street == *first_street) {
-            let house_numbers: Vec<&str> = result.iter().map(|row| row.house_number.as_str()).collect();
-            json!({
-                "entry": result[0],
-                "house_numbers": house_numbers,
-                "total_entries": result.len()
-            })
-        } else {
-            json!({
-                "entries": result,
-                "total_entries": result.len()
-            })
-        }
+        let house_numbers: Vec<&str> = result.iter().map(|row| row.house_number.as_str()).collect();
+        json!({
+            "entries": result,
+            "house_numbers": house_numbers,
+            "total_entries": result.len(),
+            "consistent_street": result.iter().all(|entry| entry.street == *first_street)
+        })
     } else {
-        json!({ "entries": [], "total_entries": 0 })
+        json!({ "entries": [], "total_entries": 0, "house_numbers": [], "consistent_street": false })
     };
 
     info!(
@@ -217,7 +216,6 @@ pub fn query_street(query: &str) -> Value {
     response
 }
 
-
 pub fn query_by_coordinates(latitude: f64, longitude: f64) -> Value {
     let start_time = Instant::now();
     info!(
@@ -229,7 +227,12 @@ pub fn query_by_coordinates(latitude: f64, longitude: f64) -> Value {
 
     let mut entries_with_distances: Vec<(&Row, f64)> = Vec::new();
 
-    for rows in data.postal_map.values().flat_map(|map| map.values()).chain(data.street_map.values()) {
+    for rows in data
+        .postal_map
+        .values()
+        .flat_map(|map| map.values())
+        .chain(data.street_map.values())
+    {
         for row in rows {
             let row_latitude: f64 = row.latitude;
             let row_longitude: f64 = row.longitude;
