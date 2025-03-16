@@ -34,16 +34,23 @@ use places_autocomplete_rs::query::{
 async fn search_by_coordinates(
     web::Query(info): web::Query<HashMap<String, String>>,
 ) -> impl Responder {
+    info!("Received request for search_by_coordinates with query: {:?}", info);
+
     let response = if let (Some(lat), Some(lon)) = (info.get("latitude"), info.get("longitude")) {
+        info!("Latitude and longitude parameters found: lat={}, lon={}", lat, lon);
         if let (Ok(latitude), Ok(longitude)) = (lat.parse::<f64>(), lon.parse::<f64>()) {
+            info!("Parsed latitude and longitude successfully: latitude={}, longitude={}", latitude, longitude);
             query_by_coordinates(latitude, longitude)
         } else {
+            warn!("Invalid latitude or longitude format: lat={}, lon={}", lat, lon);
             json!({ "error": "Invalid latitude or longitude format" })
         }
     } else {
+        warn!("Missing latitude or longitude parameters in query: {:?}", info);
         json!({ "error": "Missing latitude or longitude parameters" })
     };
 
+    info!("Response for search_by_coordinates: {:?}", response);
     HttpResponse::Ok().json(response)
 }
 
@@ -52,18 +59,24 @@ async fn search(
     web::Query(info): web::Query<HashMap<String, String>>,
     data: Data<SharedCache>,
 ) -> impl Responder {
+    info!("Received request for search with query: {:?}", info);
+
     let mut response = json!({});
     let mut found = false;
     let limit: usize = info.get("limit").and_then(|l| l.parse().ok()).unwrap_or(10);
+    info!("Limit for search results set to: {}", limit);
 
     if let Some(postal_code) = info.get("postal_code") {
+        info!("Postal code parameter found: {}", postal_code);
         let mut location_data = query_postal_code(postal_code);
         if let Some(house_number) = info.get("house_number") {
+            info!("House number parameter found: {}", house_number);
             if let Some(entry) = location_data.get_mut("entry") {
                 if entry
                     .get("house_number")
                     .map_or(false, |hn| hn != house_number)
                 {
+                    info!("House number does not match entry house number, clearing location data");
                     location_data = json!({});
                 }
             }
@@ -71,20 +84,25 @@ async fn search(
         if let Some(entries) = location_data.get_mut("entries") {
             if let Some(entries_array) = entries.as_array_mut() {
                 entries_array.truncate(limit);
+                info!("Truncated entries to limit: {}", limit);
             }
             if !entries.as_array().unwrap_or(&vec![]).is_empty() {
                 response["postal_code"] = location_data;
                 found = true;
+                info!("Postal code entries found and added to response");
             }
         } else if location_data.get("entry").is_some() {
             response["postal_code"] = location_data;
             found = true;
+            info!("Single postal code entry found and added to response");
         }
     }
 
     if let Some(street) = info.get("street") {
+        info!("Street parameter found: {}", street);
         let mut location_data = query_street(street);
         if let Some(house_number) = info.get("house_number") {
+            info!("House number parameter found: {}", house_number);
             if let Some(entries) = location_data.get_mut("entries") {
                 if let Some(entries_array) = entries.as_array_mut() {
                     entries_array.retain(|entry| {
@@ -92,23 +110,28 @@ async fn search(
                             .get("house_number")
                             .map_or(false, |hn| hn == house_number)
                     });
+                    info!("Filtered entries by house number: {}", house_number);
                 }
             }
         }
         if let Some(entries) = location_data.get_mut("entries") {
             if let Some(entries_array) = entries.as_array_mut() {
                 entries_array.truncate(limit);
+                info!("Truncated entries to limit: {}", limit);
             }
             if !entries.as_array().unwrap_or(&vec![]).is_empty() {
                 response["street"] = location_data;
                 found = true;
+                info!("Street entries found and added to response");
             }
         }
     }
 
     if found {
+        info!("Search successful, returning response");
         HttpResponse::Ok().json(response)
     } else {
+        warn!("No matching data found for search query: {:?}", info);
         HttpResponse::NotFound().body("No matching data found")
     }
 }
