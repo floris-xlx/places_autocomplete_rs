@@ -6,39 +6,114 @@ use std::io::BufReader;
 use tracing::{error, info, warn};
 use tracing_subscriber::EnvFilter;
 
-// crate imports
-use places_autocomplete_rs::parser::csv::open_csv_and_extract_headers;
-use places_autocomplete_rs::io::list::list_all_files_in_csv_data;
-use places_autocomplete_rs::parser::enumurate_house_numbers::enumerate_house_numbers;
-use places_autocomplete_rs::parser::csv::{read_all_lines, count_lines_in_csv};
-use places_autocomplete_rs::io::create::create_file_if_not_exists;
-use places_autocomplete_rs::generator::process_csv_files;
+use std::{io::Result, time::Duration};
 
+use actix_cors::Cors;
+use actix_files::NamedFile;
+use actix_web::body::{BoxBody, EitherBody};
+use actix_web::dev::{Service, ServiceResponse};
+use actix_web::http::header;
+use actix_web::web::Data;
+use actix_web::{get, web, App, HttpResponse, HttpServer, Responder};
+use moka::future::Cache;
+use serde_json::{json, Value};
+use std::collections::HashMap;
+use std::env::var;
+use std::sync::Arc;
+use std::time::Instant;
+use tokio::sync::Mutex;
 
-#[tokio::main]
-async fn main() -> std::io::Result<()> {
-    init_tracing();
+use places_autocomplete_rs::SharedCache;
 
+use places_autocomplete_rs::api::actix_client::ping;
+use places_autocomplete_rs::query::{initialize_location_data, query_postal_code, query_street};
 
-
-
-    let meow: Result<(), Box<dyn Error + Send + Sync>> = process_csv_files("./csv_data/postcodes_20190613.csv").await;
-    let meow2: Result<(), Box<dyn Error + Send + Sync>> = process_csv_files("./csv_data/postcodes_20190622_1.csv").await;
-    let meow3: Result<(), Box<dyn Error + Send + Sync>> = process_csv_files("./csv_data/postcodes_20190622_2.csv").await;
-    let meow4: Result<(), Box<dyn Error + Send + Sync>> = process_csv_files("./csv_data/postcodes_20190622_3.csv").await;
-    let meow5: Result<(), Box<dyn Error + Send + Sync>> = process_csv_files("./csv_data/postcodes_20190622_4.csv").await;
-    println!("{:#?}", meow);
-    println!("{:#?}", meow2);
-    println!("{:#?}", meow3);
-    println!("{:#?}", meow4);
-    println!("{:#?}", meow5);
-    
-
-
-
-    Ok(())
+#[get("/postal_code")]
+async fn get_by_postal_code(
+    web::Query(info): web::Query<HashMap<String, String>>,
+    data: Data<SharedCache>,
+) -> impl Responder {
+    if let Some(postal_code) = info.get("postal_code") {
+        let location_data = query_postal_code(postal_code);
+        if !location_data.as_array().unwrap_or(&vec![]).is_empty() {
+            HttpResponse::Ok().json(location_data)
+        } else {
+            HttpResponse::NotFound().body("Postal code not found")
+        }
+    } else {
+        HttpResponse::BadRequest().body("Missing postal_code query parameter")
+    }
 }
 
+#[get("/street")]
+async fn get_by_street(
+    web::Query(info): web::Query<HashMap<String, String>>,
+    data: Data<SharedCache>,
+) -> impl Responder {
+    if let Some(street) = info.get("street") {
+        let location_data = query_street(street);
+        if !location_data.as_array().unwrap_or(&vec![]).is_empty() {
+            HttpResponse::Ok().json(location_data)
+        } else {
+            HttpResponse::NotFound().body("Street not found")
+        }
+    } else {
+        HttpResponse::BadRequest().body("Missing street query parameter")
+    }
+}
+
+#[actix_web::main]
+async fn main() -> Result<()> {
+    println!("Hello, world!");
+    initialize_location_data("./data");
+
+    // Initialize tracing
+    // floris; fixme
+    init_tracing();
+
+    dotenv::dotenv().ok();
+
+    let port: u16 = var("XLX_PLACES_AUTOCOMPLETE_API_PORT")
+        .unwrap_or("4444".to_string())
+        .parse()
+        .unwrap_or(4444);
+
+    let cache: SharedCache = Arc::new(Mutex::new(
+        Cache::builder()
+            .time_to_live(Duration::from_secs(60 * 60 * 5000))
+            .build(),
+    ));
+
+    // http builder
+    HttpServer::new(move || {
+        let cors: Cors = Cors::default()
+            .allow_any_origin()
+            .allow_any_method()
+            .allow_any_header();
+
+        App::new()
+            .wrap(cors)
+            .wrap_fn(|req, srv| {
+                let fut = srv.call(req);
+                async move {
+                    let mut res: ServiceResponse<EitherBody<BoxBody>> = fut.await?;
+                    res.headers_mut()
+                        .insert(header::SERVER, "XYLEX/0".parse().unwrap());
+                    Ok(res)
+                }
+            })
+            // cache injecting middleware
+            .app_data(Data::new(cache.clone()))
+            // endpoints // docs
+            .service(ping)
+            .service(get_by_postal_code)
+            .service(get_by_street)
+    })
+    .workers(4)
+    .bind(("0.0.0.0", port))?
+    .run()
+    .await
+}
 
 /// ## Initialize Tracing
 ///
