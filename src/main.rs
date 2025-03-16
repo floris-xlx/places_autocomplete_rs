@@ -34,19 +34,34 @@ use places_autocomplete_rs::query::{
 async fn search_by_coordinates(
     web::Query(info): web::Query<HashMap<String, String>>,
 ) -> impl Responder {
-    info!("Received request for search_by_coordinates with query: {:?}", info);
+    info!(
+        "Received request for search_by_coordinates with query: {:?}",
+        info
+    );
 
     let response = if let (Some(lat), Some(lon)) = (info.get("latitude"), info.get("longitude")) {
-        info!("Latitude and longitude parameters found: lat={}, lon={}", lat, lon);
+        info!(
+            "Latitude and longitude parameters found: lat={}, lon={}",
+            lat, lon
+        );
         if let (Ok(latitude), Ok(longitude)) = (lat.parse::<f64>(), lon.parse::<f64>()) {
-            info!("Parsed latitude and longitude successfully: latitude={}, longitude={}", latitude, longitude);
+            info!(
+                "Parsed latitude and longitude successfully: latitude={}, longitude={}",
+                latitude, longitude
+            );
             query_by_coordinates(latitude, longitude)
         } else {
-            warn!("Invalid latitude or longitude format: lat={}, lon={}", lat, lon);
+            warn!(
+                "Invalid latitude or longitude format: lat={}, lon={}",
+                lat, lon
+            );
             json!({ "error": "Invalid latitude or longitude format" })
         }
     } else {
-        warn!("Missing latitude or longitude parameters in query: {:?}", info);
+        warn!(
+            "Missing latitude or longitude parameters in query: {:?}",
+            info
+        );
         json!({ "error": "Missing latitude or longitude parameters" })
     };
 
@@ -64,7 +79,11 @@ async fn search(
     let mut response = json!({});
     let mut found = false;
     let limit: usize = info.get("limit").and_then(|l| l.parse().ok()).unwrap_or(10);
+    let unique_street_only: bool = info
+        .get("unique_street_only")
+        .map_or(false, |v| v.parse().unwrap_or(false));
     info!("Limit for search results set to: {}", limit);
+    info!("Unique street only flag set to: {}", unique_street_only);
 
     if let Some(postal_code) = info.get("postal_code") {
         info!("Postal code parameter found: {}", postal_code);
@@ -83,6 +102,15 @@ async fn search(
         }
         if let Some(entries) = location_data.get_mut("entries") {
             if let Some(entries_array) = entries.as_array_mut() {
+                if unique_street_only {
+                    let mut seen_streets = std::collections::HashSet::new();
+                    entries_array.retain(|entry| {
+                        entry
+                            .get("street")
+                            .map_or(false, |street| seen_streets.insert(street.clone()))
+                    });
+                    info!("Filtered entries to unique streets");
+                }
                 entries_array.truncate(limit);
                 info!("Truncated entries to limit: {}", limit);
             }
@@ -116,6 +144,15 @@ async fn search(
         }
         if let Some(entries) = location_data.get_mut("entries") {
             if let Some(entries_array) = entries.as_array_mut() {
+                if unique_street_only {
+                    let mut seen_streets = std::collections::HashSet::new();
+                    entries_array.retain(|entry| {
+                        entry
+                            .get("street")
+                            .map_or(false, |street| seen_streets.insert(street.clone()))
+                    });
+                    info!("Filtered entries to unique streets");
+                }
                 entries_array.truncate(limit);
                 info!("Truncated entries to limit: {}", limit);
             }
