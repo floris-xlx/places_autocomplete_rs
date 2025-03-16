@@ -74,7 +74,7 @@ async fn get_by_street(
 #[actix_web::main]
 async fn main() -> Result<()> {
     println!("Hello, world!");
-    initialize_location_data("./data");
+    initialize_location_data("./data_split");
 
     // Initialize tracing
     // floris; fixme
