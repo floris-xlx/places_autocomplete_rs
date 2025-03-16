@@ -1,8 +1,8 @@
+use indicatif::ProgressBar;
 use std::fs::File;
 use std::io::BufReader;
 use tracing::{error, info, warn};
 use tracing_subscriber::EnvFilter;
-use indicatif::ProgressBar;
 
 // crate imports
 use crate::io::create::create_file_if_not_exists;
@@ -11,8 +11,9 @@ use crate::parser::csv::open_csv_and_extract_headers;
 use crate::parser::csv::{count_lines_in_csv, read_all_lines};
 use crate::parser::enumurate_house_numbers::enumerate_house_numbers;
 
-pub async fn process_csv_files() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let file_path: &str = "./csv_data/postcodes_20190613.csv";
+pub async fn process_csv_files(
+    file_path: &str,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let headers: Vec<&str> = vec![
         "postal_code",
         "street",
