@@ -12,7 +12,7 @@ use crate::parser::csv::{count_lines_in_csv, read_all_lines};
 use crate::parser::enumurate_house_numbers::enumerate_house_numbers;
 
 pub async fn process_csv_files() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let file_path: &str = "./csv_data/postcodes.csv";
+    let file_path: &str = "./csv_data/postcodes_20190613.csv";
     let headers: Vec<&str> = vec![
         "postal_code",
         "street",
