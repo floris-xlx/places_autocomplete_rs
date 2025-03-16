@@ -36,20 +36,46 @@ async fn search(
 ) -> impl Responder {
     let mut response = json!({});
     let mut found = false;
+    let limit: usize = info.get("limit").and_then(|l| l.parse().ok()).unwrap_or(10);
 
     if let Some(postal_code) = info.get("postal_code") {
-        let location_data = query_postal_code(postal_code);
-        if let Some(entries) = location_data.get("entries") {
+        let mut location_data = query_postal_code(postal_code);
+        if let Some(house_number) = info.get("house_number") {
+            if let Some(entry) = location_data.get_mut("entry") {
+                if entry.get("house_number").map_or(false, |hn| hn != house_number) {
+                    location_data = json!({});
+                }
+            }
+        }
+        if let Some(entries) = location_data.get_mut("entries") {
+            if let Some(entries_array) = entries.as_array_mut() {
+                entries_array.truncate(limit);
+            }
             if !entries.as_array().unwrap_or(&vec![]).is_empty() {
                 response["postal_code"] = location_data;
                 found = true;
             }
+        } else if location_data.get("entry").is_some() {
+            response["postal_code"] = location_data;
+            found = true;
         }
     }
 
     if let Some(street) = info.get("street") {
-        let location_data = query_street(street);
-        if let Some(entries) = location_data.get("entries") {
+        let mut location_data = query_street(street);
+        if let Some(house_number) = info.get("house_number") {
+            if let Some(entries) = location_data.get_mut("entries") {
+                if let Some(entries_array) = entries.as_array_mut() {
+                    entries_array.retain(|entry| {
+                        entry.get("house_number").map_or(false, |hn| hn == house_number)
+                    });
+                }
+            }
+        }
+        if let Some(entries) = location_data.get_mut("entries") {
+            if let Some(entries_array) = entries.as_array_mut() {
+                entries_array.truncate(limit);
+            }
             if !entries.as_array().unwrap_or(&vec![]).is_empty() {
                 response["street"] = location_data;
                 found = true;
