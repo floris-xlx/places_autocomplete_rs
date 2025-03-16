@@ -47,7 +47,7 @@ impl LocationData {
             match result {
                 Ok(row) => {
                     info!("Deserialized row: {:?}", row);
-                    if headers_len == 8 {
+                    if headers_len == 10 {
                         self.postal_map
                             .entry(row.postal_code.clone())
                             .or_default()

@@ -23,6 +23,8 @@ pub async fn process_csv_files(
         "neighborhood",
         "municipality",
         "province",
+        "latitude",
+        "longitude",
     ];
 
     // Open CSV and extract headers
@@ -51,7 +53,7 @@ pub async fn process_csv_files(
         }
     }
     info!("Lines read successfully");
-    
+
     fn list_files_in_directory(directory: &str) -> std::io::Result<Vec<String>> {
         let mut file_list: Vec<String> = Vec::new();
         for entry in std::fs::read_dir(directory)? {
