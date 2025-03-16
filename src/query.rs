@@ -190,12 +190,14 @@ pub fn query_street(query: &str) -> Value {
 
 pub fn query_by_coordinates(latitude: f64, longitude: f64) -> Value {
     let start_time = Instant::now();
-    info!("Querying closest location to coordinates: ({}, {})", latitude, longitude);
+    info!(
+        "Querying closest locations to coordinates: ({}, {})",
+        latitude, longitude
+    );
 
     let data = LOCATION_DATA.read().expect("Failed to acquire read lock");
 
-    let mut closest_entry: Option<&Row> = None;
-    let mut min_distance = f64::MAX;
+    let mut entries_with_distances: Vec<(&Row, f64)> = Vec::new();
 
     for rows in data.postal_map.values().chain(data.street_map.values()) {
         for row in rows {
@@ -203,25 +205,39 @@ pub fn query_by_coordinates(latitude: f64, longitude: f64) -> Value {
             let row_longitude: f64 = row.longitude;
 
             let distance = haversine_distance(latitude, longitude, row_latitude, row_longitude);
-            if distance < min_distance {
-                min_distance = distance;
-                closest_entry = Some(row);
-            }
+            entries_with_distances.push((row, distance));
         }
     }
 
-    let response = match closest_entry {
-        Some(entry) => json!({
+    // Sort by distance
+    entries_with_distances.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+
+    // Collect unique streets
+    let mut unique_streets = Vec::new();
+    let mut seen_streets = std::collections::HashSet::new();
+
+    for (entry, distance) in entries_with_distances {
+        if seen_streets.insert(&entry.street) {
+            unique_streets.push((entry, distance));
+        }
+        if unique_streets.len() == 20 {
+            break;
+        }
+    }
+
+    let response = json!({
+        "entries": unique_streets.iter().map(|(entry, distance)| json!({
             "entry": entry,
-            "distance": min_distance
-        }),
-        None => json!({ "entry": null, "distance": null }),
-    };
+            "distance": distance
+        })).collect::<Vec<_>>(),
+        "total_entries": unique_streets.len()
+    });
 
     info!(
-        "Query result for coordinates ({}, {}): closest entry found in {} ms",
+        "Query result for coordinates ({}, {}): {} unique streets found in {} ms",
         latitude,
         longitude,
+        unique_streets.len(),
         start_time.elapsed().as_millis()
     );
 
