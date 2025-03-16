@@ -17,7 +17,7 @@ pub async fn process_csv_files(
     let headers: Vec<&str> = vec![
         "postal_code",
         "street",
-        "house_numbers",
+        "house_number",
         "city",
         "area",
         "neighborhood",
@@ -69,11 +69,11 @@ pub async fn process_csv_files(
     // Initialize the unique line count
     let mut unique_line_count = 0;
     let mut file_index = {
-        let files = list_files_in_directory("./data")?;
+        let files = list_files_in_directory("./data_split")?;
         let mut max_index = 0;
 
         for file in files {
-            if let Some(index_str) = file.strip_prefix("data_nl_").and_then(|s| s.strip_suffix(".csv")) {
+            if let Some(index_str) = file.strip_prefix("part_").and_then(|s| s.strip_suffix(".csv")) {
                 if let Ok(index) = index_str.parse::<usize>() {
                     if index > max_index {
                         max_index = index;
