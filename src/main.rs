@@ -7,32 +7,38 @@ use tracing::{error, info, warn};
 use tracing_subscriber::EnvFilter;
 
 // crate imports
-use places_autocomplete_rs::generator::process_csv_files;
-use places_autocomplete_rs::io::create::create_file_if_not_exists;
-use places_autocomplete_rs::io::list::list_all_files_in_csv_data;
 use places_autocomplete_rs::parser::csv::open_csv_and_extract_headers;
-use places_autocomplete_rs::parser::csv::{count_lines_in_csv, read_all_lines};
+use places_autocomplete_rs::io::list::list_all_files_in_csv_data;
 use places_autocomplete_rs::parser::enumurate_house_numbers::enumerate_house_numbers;
+use places_autocomplete_rs::parser::csv::{read_all_lines, count_lines_in_csv};
+use places_autocomplete_rs::io::create::create_file_if_not_exists;
+use places_autocomplete_rs::generator::process_csv_files;
+
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
     init_tracing();
 
-    let (meow, meow2, meow3, meow4, meow5) = tokio::join!(
-        process_csv_files("./csv_data/postcodes_20190613.csv"),
-        process_csv_files("./csv_data/postcodes_20190622_1.csv"),
-        process_csv_files("./csv_data/postcodes_20190622_2.csv"),
-        process_csv_files("./csv_data/postcodes_20190622_3.csv"),
-        process_csv_files("./csv_data/postcodes_20190622_4.csv")
-    );
+
+
+
+    let meow: Result<(), Box<dyn Error + Send + Sync>> = process_csv_files("./csv_data/postcodes_20190613.csv").await;
+    let meow2: Result<(), Box<dyn Error + Send + Sync>> = process_csv_files("./csv_data/postcodes_20190622_1.csv").await;
+    let meow3: Result<(), Box<dyn Error + Send + Sync>> = process_csv_files("./csv_data/postcodes_20190622_2.csv").await;
+    let meow4: Result<(), Box<dyn Error + Send + Sync>> = process_csv_files("./csv_data/postcodes_20190622_3.csv").await;
+    let meow5: Result<(), Box<dyn Error + Send + Sync>> = process_csv_files("./csv_data/postcodes_20190622_4.csv").await;
     println!("{:#?}", meow);
     println!("{:#?}", meow2);
     println!("{:#?}", meow3);
     println!("{:#?}", meow4);
     println!("{:#?}", meow5);
+    
+
+
 
     Ok(())
 }
+
 
 /// ## Initialize Tracing
 ///

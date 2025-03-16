@@ -1,12 +1,12 @@
-use indicatif::ProgressBar;
+use std::collections::HashSet;
 use std::fs::File;
-use std::io::BufReader;
+use std::io::{BufReader, Seek, SeekFrom, Write};
 use tracing::{error, info, warn};
 use tracing_subscriber::EnvFilter;
 
 // crate imports
 use crate::io::create::create_file_if_not_exists;
-use crate::io::list::list_all_files_in_csv_data;
+
 use crate::parser::csv::open_csv_and_extract_headers;
 use crate::parser::csv::{count_lines_in_csv, read_all_lines};
 use crate::parser::enumurate_house_numbers::enumerate_house_numbers;
@@ -31,10 +31,6 @@ pub async fn process_csv_files(
     }
     info!("Headers extracted successfully");
 
-    // Create the output file if it doesn't exist
-    let output_file_path = "./data/data_nl_1.csv";
-    create_file_if_not_exists(output_file_path)?;
-
     // Read all lines and process them
     if let Err(e) = read_all_lines(file_path).await {
         error!("Error reading lines: {:#?}", e);
@@ -47,7 +43,6 @@ pub async fn process_csv_files(
                 .append(true)
                 .open("failed_lines.txt")?;
 
-            use std::io::Write;
             writeln!(
                 failed_file,
                 "Error reading lines from {}: {:#?}",
@@ -57,16 +52,54 @@ pub async fn process_csv_files(
     }
     info!("Lines read successfully");
 
-    // Initialize the progress bar
-    let mut line_count = 0;
-    let progress_bar = ProgressBar::new(0); // Will be updated later
+    fn list_files_in_directory(directory: &str) -> std::io::Result<Vec<String>> {
+        let mut file_list = Vec::new();
+        for entry in std::fs::read_dir(directory)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_file() {
+                if let Some(file_name) = path.file_name().and_then(|name| name.to_str()) {
+                    file_list.push(file_name.to_string());
+                }
+            }
+        }
+        Ok(file_list)
+    }
+
+    // Initialize the unique line count
+    let mut unique_line_count = 0;
+    let mut file_index = {
+        let files = list_files_in_directory("./data")?;
+        let mut max_index = 0;
+
+        for file in files {
+            if let Some(index_str) = file.strip_prefix("data_nl_").and_then(|s| s.strip_suffix(".csv")) {
+                if let Ok(index) = index_str.parse::<usize>() {
+                    if index > max_index {
+                        max_index = index;
+                    }
+                }
+            }
+        }
+
+        if max_index == 0 {
+            1
+        } else {
+            max_index + 1
+        }
+    };
 
     // Open the CSV file for reading
     let mut rdr = csv::Reader::from_path(file_path)?;
-    let mut writer = csv::Writer::from_path(output_file_path)?;
+    let mut output_file_path = format!("./data/data_nl_{}.csv", file_index);
+    create_file_if_not_exists(&output_file_path)?;
+    let mut writer = csv::Writer::from_path(&output_file_path)?;
 
     // Write headers to the output file
     writer.write_record(&headers)?;
+
+    // Initialize a set to track unique lines
+    let mut unique_lines = HashSet::new();
 
     for result in rdr.records() {
         let record = result?;
@@ -74,30 +107,28 @@ pub async fn process_csv_files(
         let enumerated_lines = enumerate_house_numbers(&line);
 
         for enumerated_line in enumerated_lines {
-            writer.write_record(enumerated_line.split(','))?;
-            line_count += 1;
-            progress_bar.inc(1);
+            if unique_lines.insert(enumerated_line.clone()) {
+                writer.write_record(enumerated_line.split(','))?;
+                unique_line_count += 1;
 
-            // Check if the file has reached the maximum line count
-            if line_count >= 5_000_000 {
-                writer.flush()?;
-                info!("Reached maximum line count for file: {}", output_file_path);
-                progress_bar.finish_with_message("Processing complete");
-                return Ok(());
+                // Check if the file has reached the maximum line count
+                if unique_line_count >= 1_000_000 {
+                    writer.flush()?;
+                    info!("Reached maximum line count for file: {}", output_file_path);
+                    file_index += 1;
+                    output_file_path = format!("./data/data_nl_{}.csv", file_index);
+                    create_file_if_not_exists(&output_file_path)?;
+                    writer = csv::Writer::from_path(&output_file_path)?;
+                    writer.write_record(&headers)?;
+                    unique_line_count = 0;
+                }
             }
         }
     }
 
     writer.flush()?;
-    progress_bar.finish_with_message("Processing complete");
-    info!("Total lines written: {}", line_count);
-
-    // Count lines in the CSV
-    if let Err(e) = count_lines_in_csv(output_file_path).await {
-        error!("Error counting lines in CSV: {:#?}", e);
-    } else {
-        info!("Total lines in output CSV: {}", line_count);
-    }
+    info!("Processing complete");
+    info!("Total unique lines written: {}", unique_lines.len());
 
     info!("Done!");
 
