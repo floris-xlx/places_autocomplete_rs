@@ -29,45 +29,38 @@ use places_autocomplete_rs::SharedCache;
 use places_autocomplete_rs::api::actix_client::ping;
 use places_autocomplete_rs::query::{initialize_location_data, query_postal_code, query_street};
 
-#[get("/postal_code")]
-async fn get_by_postal_code(
+#[get("/search")]
+async fn search(
     web::Query(info): web::Query<HashMap<String, String>>,
     data: Data<SharedCache>,
 ) -> impl Responder {
+    let mut response = json!({});
+    let mut found = false;
+
     if let Some(postal_code) = info.get("postal_code") {
         let location_data = query_postal_code(postal_code);
         if let Some(entries) = location_data.get("entries") {
             if !entries.as_array().unwrap_or(&vec![]).is_empty() {
-                HttpResponse::Ok().json(location_data)
-            } else {
-                HttpResponse::NotFound().body("Postal code not found")
+                response["postal_code"] = location_data;
+                found = true;
             }
-        } else {
-            HttpResponse::NotFound().body("Postal code not found")
         }
-    } else {
-        HttpResponse::BadRequest().body("Missing postal_code query parameter")
     }
-}
 
-#[get("/street")]
-async fn get_by_street(
-    web::Query(info): web::Query<HashMap<String, String>>,
-    data: Data<SharedCache>,
-) -> impl Responder {
     if let Some(street) = info.get("street") {
         let location_data = query_street(street);
         if let Some(entries) = location_data.get("entries") {
             if !entries.as_array().unwrap_or(&vec![]).is_empty() {
-                HttpResponse::Ok().json(location_data)
-            } else {
-                HttpResponse::NotFound().body("Street not found")
+                response["street"] = location_data;
+                found = true;
             }
-        } else {
-            HttpResponse::NotFound().body("Street not found")
         }
+    }
+
+    if found {
+        HttpResponse::Ok().json(response)
     } else {
-        HttpResponse::BadRequest().body("Missing street query parameter")
+        HttpResponse::NotFound().body("No matching data found")
     }
 }
 
@@ -115,8 +108,8 @@ async fn main() -> Result<()> {
             .app_data(Data::new(cache.clone()))
             // endpoints // docs
             .service(ping)
-            .service(get_by_postal_code)
-            .service(get_by_street)
+            .service(search)
+          
     })
     .workers(4)
     .bind(("0.0.0.0", port))?

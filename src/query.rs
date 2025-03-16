@@ -150,45 +150,96 @@ pub fn query_postal_code(postal_code: &str) -> Value {
     let start_time = Instant::now();
     info!("Querying postal code: {}", postal_code);
     let data = LOCATION_DATA.read().expect("Failed to acquire read lock");
-    let result: Vec<Value> = data
+    let mut result: Vec<Value> = data
         .lookup_by_postal_code(postal_code)
         .into_iter()
         .map(|row| json!(row))
         .collect();
+
     let total_entries = result.len();
     let duration = start_time.elapsed();
+
+    let response = if total_entries > 0 {
+        let first_street = result[0]["street"].as_str().unwrap_or("");
+        if result.iter().all(|entry| entry["street"] == first_street) {
+            let house_numbers: Vec<String> = result
+                .iter()
+                .filter_map(|entry| entry["house_number"].as_str().map(|s| s.to_string()))
+                .collect();
+            json!({
+                "entry": result[0],
+                "house_numbers": house_numbers,
+                "total_entries": total_entries
+            })
+        } else {
+            json!({
+                "entries": result,
+                "total_entries": total_entries
+            })
+        }
+    } else {
+        json!({
+            "entries": result,
+            "total_entries": total_entries
+        })
+    };
+
     info!(
         "Query result for postal code {}: {} entries found in {} ms",
         postal_code,
         total_entries,
         duration.as_millis()
     );
-    json!({
-        "entries": result,
-        "total_entries": total_entries
-    })
+
+    response
 }
 
 pub fn query_street(query: &str) -> Value {
     let start_time = Instant::now();
     info!("Querying street with search term: {}", query);
     let data = LOCATION_DATA.read().expect("Failed to acquire read lock");
-    let result: Vec<Value> = data
+    let mut result: Vec<Value> = data
         .search_by_street(query)
         .into_iter()
         .cloned()
         .map(|row| json!(row))
         .collect();
+
     let total_entries = result.len();
     let duration = start_time.elapsed();
+
+    let response = if total_entries > 0 {
+        let first_street = result[0]["street"].as_str().unwrap_or("");
+        if result.iter().all(|entry| entry["street"] == first_street) {
+            let house_numbers: Vec<String> = result
+                .iter()
+                .filter_map(|entry| entry["house_numbers"].as_str().map(|s| s.to_string()))
+                .collect();
+            json!({
+                "entry": result[0],
+                "house_numbers": house_numbers,
+                "total_entries": total_entries
+            })
+        } else {
+            json!({
+                "entries": result,
+                "total_entries": total_entries
+            })
+        }
+    } else {
+        json!({
+            "entries": result,
+            "total_entries": total_entries
+        })
+    };
+
     info!(
         "Query result for street search '{}': {} entries found in {} ms",
         query,
         total_entries,
         duration.as_millis()
     );
-    json!({
-        "entries": result,
-        "total_entries": total_entries
-    })
+
+    response
 }
+
