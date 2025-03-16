@@ -1,6 +1,6 @@
 #![allow(unused_must_use)]
 
-
+use std::error::Error;
 use std::fs::File;
 use std::io::BufReader;
 use tracing::{error, info, warn};
@@ -12,34 +12,18 @@ use places_autocomplete_rs::io::list::list_all_files_in_csv_data;
 use places_autocomplete_rs::parser::enumurate_house_numbers::enumerate_house_numbers;
 use places_autocomplete_rs::parser::csv::{read_all_lines, count_lines_in_csv};
 use places_autocomplete_rs::io::create::create_file_if_not_exists;
-
+use places_autocomplete_rs::generator::process_csv_files;
 
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
     init_tracing();
 
-    let file_names: Vec<String> = list_all_files_in_csv_data()?;
-    info!("Files in csv_data directory: {:#?}", file_names);
-
-    for file_name in file_names {
-        let file_path: String = format!("./csv_data/{}", file_name);
-        info!("Opening file: {}", file_path);
 
 
-        match open_csv_and_extract_headers(file_path).await {
-            Ok(headers) => {
-                info!("Headers: {:#?}", headers);
-            }
-            Err(e) => {
-                error!("Error: {:#?}", e);
-            }
-        }
-    }
 
-    info!("Done!");
-
-
+    let meow: Result<(), Box<dyn Error + Send + Sync>> = process_csv_files().await;
+    println!("{:#?}", meow);
 
 
     Ok(())
