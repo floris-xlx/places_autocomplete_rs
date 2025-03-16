@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::fs;
+use std::time::Instant;
 use csv::ReaderBuilder;
 use serde::Deserialize;
 use std::sync::RwLock;
@@ -35,6 +36,7 @@ impl LocationData {
     }
     
     pub fn load_from_csv(&mut self, path: &str) {
+        let start_time = Instant::now();
         info!("Loading data from CSV file: {}", path);
         let mut rdr = ReaderBuilder::new().has_headers(true).from_path(path).expect("Failed to open CSV file");
         let headers_len = rdr.headers().expect("Failed to read headers").len();
@@ -54,10 +56,12 @@ impl LocationData {
                 }
             }
         }
-        info!("Finished loading data from CSV file: {}", path);
+        let duration = start_time.elapsed();
+        info!("Finished loading data from CSV file: {} in {} ms", path, duration.as_millis());
     }
 
     pub fn load_all(&mut self, folder: &str) {
+        let start_time = Instant::now();
         info!("Loading all CSV files from folder: {}", folder);
         for entry in fs::read_dir(folder).expect("Failed to read directory") {
             let path = entry.expect("Failed to read directory entry").path();
@@ -65,17 +69,37 @@ impl LocationData {
                 self.load_from_csv(path.to_str().expect("Failed to convert path to string"));
             }
         }
-        info!("Finished loading all CSV files from folder: {}", folder);
+        let duration = start_time.elapsed();
+        info!("Finished loading all CSV files from folder: {} in {} ms", folder, duration.as_millis());
     }
 
-    pub fn lookup_by_postal_code(&self, postal_code: &str) -> Option<&Vec<Row>> {
+    pub fn lookup_by_postal_code(&self, postal_code: &str) -> Vec<&Row> {
+        let start_time = Instant::now();
+        let postal_code = postal_code.to_lowercase();
         info!("Looking up postal code: {}", postal_code);
-        self.postal_map.get(postal_code)
+        let mut results: Vec<&Row> = self.postal_map.iter()
+            .filter(|(key, _)| key.to_lowercase().contains(&postal_code))
+            .flat_map(|(_, rows)| rows)
+            .collect();
+        
+ 
+        let duration = start_time.elapsed();
+        info!("Lookup for postal code {} completed in {} ms", postal_code, duration.as_millis());
+        results
     }
 
     pub fn search_by_street(&self, query: &str) -> Vec<&Row> {
+        let start_time = Instant::now();
+        let query = query.to_lowercase();
         info!("Searching for street containing: {}", query);
-        self.streets.iter().filter(|row| row.street.contains(query)).collect()
+        let mut results: Vec<&Row> = self.streets.iter()
+            .filter(|row| row.street.to_lowercase().contains(&query))
+            .collect();
+       
+        
+        let duration = start_time.elapsed();
+        info!("Search for street '{}' completed in {} ms", query, duration.as_millis());
+        results
     }
 }
 
@@ -84,23 +108,25 @@ lazy_static::lazy_static! {
 }
 
 pub fn initialize_location_data(folder: &str) {
+    let start_time = Instant::now();
     info!("Initializing location data from folder: {}", folder);
     let mut data = LOCATION_DATA.write().expect("Failed to acquire write lock");
     data.load_all(folder);
-    info!("Finished initializing location data");
+    let duration = start_time.elapsed();
+    info!("Finished initializing location data in {} ms", duration.as_millis());
 }
 
 pub fn query_postal_code(postal_code: &str) -> Value {
+    let start_time = Instant::now();
     info!("Querying postal code: {}", postal_code);
     let data = LOCATION_DATA.read().expect("Failed to acquire read lock");
     let result: Vec<Value> = data.lookup_by_postal_code(postal_code)
-        .cloned()
-        .unwrap_or_default()
         .into_iter()
         .map(|row| json!(row))
         .collect();
     let total_entries = result.len();
-    info!("Query result for postal code {}: {} entries found", postal_code, total_entries);
+    let duration = start_time.elapsed();
+    info!("Query result for postal code {}: {} entries found in {} ms", postal_code, total_entries, duration.as_millis());
     json!({
         "entries": result,
         "total_entries": total_entries
@@ -108,6 +134,7 @@ pub fn query_postal_code(postal_code: &str) -> Value {
 }
 
 pub fn query_street(query: &str) -> Value {
+    let start_time = Instant::now();
     info!("Querying street with search term: {}", query);
     let data = LOCATION_DATA.read().expect("Failed to acquire read lock");
     let result: Vec<Value> = data.search_by_street(query)
@@ -116,7 +143,8 @@ pub fn query_street(query: &str) -> Value {
         .map(|row| json!(row))
         .collect();
     let total_entries = result.len();
-    info!("Query result for street search '{}': {} entries found", query, total_entries);
+    let duration = start_time.elapsed();
+    info!("Query result for street search '{}': {} entries found in {} ms", query, total_entries, duration.as_millis());
     json!({
         "entries": result,
         "total_entries": total_entries

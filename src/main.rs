@@ -35,8 +35,12 @@ async fn get_by_postal_code(
 ) -> impl Responder {
     if let Some(postal_code) = info.get("postal_code") {
         let location_data = query_postal_code(postal_code);
-        if !location_data.as_array().unwrap_or(&vec![]).is_empty() {
-            HttpResponse::Ok().json(location_data)
+        if let Some(entries) = location_data.get("entries") {
+            if !entries.as_array().unwrap_or(&vec![]).is_empty() {
+                HttpResponse::Ok().json(location_data)
+            } else {
+                HttpResponse::NotFound().body("Postal code not found")
+            }
         } else {
             HttpResponse::NotFound().body("Postal code not found")
         }
@@ -52,8 +56,12 @@ async fn get_by_street(
 ) -> impl Responder {
     if let Some(street) = info.get("street") {
         let location_data = query_street(street);
-        if !location_data.as_array().unwrap_or(&vec![]).is_empty() {
-            HttpResponse::Ok().json(location_data)
+        if let Some(entries) = location_data.get("entries") {
+            if !entries.as_array().unwrap_or(&vec![]).is_empty() {
+                HttpResponse::Ok().json(location_data)
+            } else {
+                HttpResponse::NotFound().body("Street not found")
+            }
         } else {
             HttpResponse::NotFound().body("Street not found")
         }
