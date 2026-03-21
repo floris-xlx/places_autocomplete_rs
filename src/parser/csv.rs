@@ -1,55 +1,33 @@
-use csv::{ReaderBuilder, StringRecord};
-use futures::stream::StreamExt;
-use std::error::Error;
-use std::fs::File;
+use csv::ReaderBuilder;
 use std::path::Path;
-use tracing::{error, info, warn};
 
-pub async fn open_csv_and_extract_headers<P: AsRef<Path>>(
-    file_path: P,
-) -> Result<Vec<String>, Box<dyn Error>> {
-    let mut rdr: csv::Reader<File> = ReaderBuilder::new().from_path(file_path)?;
-
-    let headers: Vec<String> = Vec::new();
-    info!("Extracting headers from CSV file");
-    info!("Headers: {:#?}", rdr.headers());
-
-    Ok(headers)
-}
-
-pub async fn read_all_lines(file_path: &str) -> Result<(), Box<dyn Error>> {
-    let mut rdr: csv::Reader<File> = ReaderBuilder::new().from_path(file_path)?;
-
-    let mut records = rdr.records();
-    while let Some(record) = records.next() {
-        match record {
-            Ok(record) => {
-                info!("Record: {:#?}", record);
-            }
-            Err(e) => {
-                error!("Error reading record: {:#?}", e);
-            }
+/// Ensures the CSV has a header row matching `expected` (same length, same strings in order).
+pub fn validate_csv_headers<P: AsRef<Path>>(
+    path: P,
+    expected: &[&str],
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_path(path.as_ref())?;
+    let hdrs = rdr.headers()?;
+    if hdrs.len() != expected.len() {
+        return Err(format!(
+            "CSV header count mismatch: expected {} columns, got {}",
+            expected.len(),
+            hdrs.len()
+        )
+        .into());
+    }
+    for (i, exp) in expected.iter().enumerate() {
+        if hdrs.get(i) != Some(*exp) {
+            return Err(format!(
+                "CSV header mismatch at column {}: expected {:?}, got {:?}",
+                i,
+                exp,
+                hdrs.get(i)
+            )
+            .into());
         }
     }
-
     Ok(())
-}
-
-pub async fn count_lines_in_csv(file_path: &str) -> Result<usize, Box<dyn Error>> {
-    let mut rdr: csv::Reader<File> = ReaderBuilder::new().from_path(file_path)?;
-    let mut count = 0;
-
-    let mut records = rdr.records();
-    while let Some(record) = records.next() {
-        match record {
-            Ok(_) => {
-                count += 1;
-            }
-            Err(e) => {
-                error!("Error reading record: {:#?}", e);
-            }
-        }
-    }
-
-    Ok(count)
 }

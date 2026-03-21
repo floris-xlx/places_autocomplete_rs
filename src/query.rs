@@ -24,7 +24,9 @@ pub struct Row {
 #[derive(Debug)]
 pub struct LocationData {
     postal_map: HashMap<char, HashMap<String, Vec<Row>>>, // Indexed by first character of postal code
-    street_map: HashMap<String, Vec<Row>>,                // Street name lookups
+    street_map: HashMap<String, Vec<Row>>,                 // Street name lookups
+    /// One entry per loaded CSV row; used for coordinate search without duplicating work.
+    all_rows: Vec<Row>,
 }
 
 impl LocationData {
@@ -33,6 +35,7 @@ impl LocationData {
         Self {
             postal_map: HashMap::new(),
             street_map: HashMap::new(),
+            all_rows: Vec::new(),
         }
     }
 
@@ -45,22 +48,21 @@ impl LocationData {
             .from_path(path)
             .expect("Failed to open CSV file");
 
-        for result in rdr.deserialize::<Row>() {
-            if let Ok(row) = result {
-                if let Some(first_char) = row.postal_code.chars().next() {
-                    self.postal_map
-                        .entry(first_char)
-                        .or_default()
-                        .entry(row.postal_code.clone())
-                        .or_default()
-                        .push(row.clone());
-                }
-
-                self.street_map
-                    .entry(row.street.to_lowercase())
+        for row in rdr.deserialize::<Row>().flatten() {
+            self.all_rows.push(row.clone());
+            if let Some(first_char) = row.postal_code.chars().next() {
+                self.postal_map
+                    .entry(first_char)
                     .or_default()
-                    .push(row);
+                    .entry(row.postal_code.clone())
+                    .or_default()
+                    .push(row.clone());
             }
+
+            self.street_map
+                .entry(row.street.to_lowercase())
+                .or_default()
+                .push(row);
         }
 
         info!(
@@ -227,19 +229,9 @@ pub fn query_by_coordinates(latitude: f64, longitude: f64) -> Value {
 
     let mut entries_with_distances: Vec<(&Row, f64)> = Vec::new();
 
-    for rows in data
-        .postal_map
-        .values()
-        .flat_map(|map| map.values())
-        .chain(data.street_map.values())
-    {
-        for row in rows {
-            let row_latitude: f64 = row.latitude;
-            let row_longitude: f64 = row.longitude;
-
-            let distance = haversine_distance(latitude, longitude, row_latitude, row_longitude);
-            entries_with_distances.push((row, distance));
-        }
+    for row in &data.all_rows {
+        let distance = haversine_distance(latitude, longitude, row.latitude, row.longitude);
+        entries_with_distances.push((row, distance));
     }
 
     // Sort by distance

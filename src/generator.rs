@@ -1,15 +1,51 @@
 use std::collections::HashSet;
 use std::fs::File;
-use std::io::{BufReader, Seek, SeekFrom, Write};
-use tracing::{error, info, warn};
-use tracing_subscriber::EnvFilter;
+use std::path::PathBuf;
 
-// crate imports
+use tracing::info;
+
 use crate::io::create::create_file_if_not_exists;
+use crate::parser::csv::validate_csv_headers;
+use crate::parser::enumerate_house_numbers::enumerate_house_numbers;
+use crate::places_data_dir;
 
-use crate::parser::csv::open_csv_and_extract_headers;
-use crate::parser::csv::{count_lines_in_csv, read_all_lines};
-use crate::parser::enumurate_house_numbers::enumerate_house_numbers;
+const RECORD_SEP: &str = "\x1e";
+
+fn record_dedup_key(record: &csv::StringRecord) -> String {
+    record.iter().collect::<Vec<_>>().join(RECORD_SEP)
+}
+
+fn list_filenames_in_directory(directory: &PathBuf) -> std::io::Result<Vec<String>> {
+    let mut file_list = Vec::new();
+    for entry in std::fs::read_dir(directory)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_file() {
+            if let Some(file_name) = path.file_name().and_then(|name| name.to_str()) {
+                file_list.push(file_name.to_string());
+            }
+        }
+    }
+    Ok(file_list)
+}
+
+fn next_data_nl_index(data_dir: &PathBuf) -> std::io::Result<usize> {
+    let files = list_filenames_in_directory(data_dir)?;
+    let mut max_index: usize = 0;
+    for file in files {
+        if let Some(index_str) = file
+            .strip_prefix("part_")
+            .and_then(|s| s.strip_suffix(".csv"))
+        {
+            if let Ok(index) = index_str.parse::<usize>() {
+                if index > max_index {
+                    max_index = index;
+                }
+            }
+        }
+    }
+    Ok(if max_index == 0 { 1 } else { max_index + 1 })
+}
 
 pub async fn process_csv_files(
     file_path: &str,
@@ -27,100 +63,42 @@ pub async fn process_csv_files(
         "longitude",
     ];
 
-    // Open CSV and extract headers
-    if let Err(e) = open_csv_and_extract_headers(file_path).await {
-        error!("Error extracting headers: {:#?}", e);
-    }
-    info!("Headers extracted successfully");
+    validate_csv_headers(file_path, &headers)?;
 
-    // Read all lines and process them
-    if let Err(e) = read_all_lines(file_path).await {
-        error!("Error reading lines: {:#?}", e);
-        if let Err(e) = read_all_lines(file_path).await {
-            error!("Error reading lines: {:#?}", e);
+    let data_dir = PathBuf::from(places_data_dir());
+    std::fs::create_dir_all(&data_dir)?;
 
-            // Append the error to failed_lines.txt
-            let mut failed_file = std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open("failed_lines.txt")?;
+    let mut unique_line_count = 0usize;
+    let mut file_index = next_data_nl_index(&data_dir)?;
 
-            writeln!(
-                failed_file,
-                "Error reading lines from {}: {:#?}",
-                file_path, e
-            )?;
-        }
-    }
-    info!("Lines read successfully");
-
-    fn list_files_in_directory(directory: &str) -> std::io::Result<Vec<String>> {
-        let mut file_list: Vec<String> = Vec::new();
-        for entry in std::fs::read_dir(directory)? {
-            let entry: std::fs::DirEntry = entry?;
-            let path: std::path::PathBuf = entry.path();
-            if path.is_file() {
-                if let Some(file_name) = path.file_name().and_then(|name| name.to_str()) {
-                    file_list.push(file_name.to_string());
-                }
-            }
-        }
-        Ok(file_list)
-    }
-
-    // Initialize the unique line count
-    let mut unique_line_count = 0;
-    let mut file_index: usize = {
-        let files: Vec<String> = list_files_in_directory("./data_split")?;
-        let mut max_index: usize = 0;
-
-        for file in files {
-            if let Some(index_str) = file.strip_prefix("part_").and_then(|s| s.strip_suffix(".csv")) {
-                if let Ok(index) = index_str.parse::<usize>() {
-                    if index > max_index {
-                        max_index = index;
-                    }
-                }
-            }
-        }
-
-        if max_index == 0 {
-            1
-        } else {
-            max_index + 1
-        }
-    };
-
-    // Open the CSV file for reading
     let mut rdr: csv::Reader<File> = csv::Reader::from_path(file_path)?;
-    let mut output_file_path: String = format!("./data/data_nl_{}.csv", file_index);
-    create_file_if_not_exists(&output_file_path)?;
-    let mut writer: csv::Writer<File> = csv::Writer::from_path(&output_file_path)?;
+    let mut output_path = data_dir.join(format!("data_nl_{}.csv", file_index));
+    create_file_if_not_exists(output_path.to_str().ok_or("invalid output path")?)?;
+    let mut writer: csv::Writer<File> = csv::Writer::from_path(&output_path)?;
 
-    // Write headers to the output file
     writer.write_record(&headers)?;
 
-    // Initialize a set to track unique lines
+    // Holds full expanded rows in memory; large national runs may need a different dedup strategy.
     let mut unique_lines: HashSet<String> = HashSet::new();
 
     for result in rdr.records() {
         let record: csv::StringRecord = result?;
-        let line: String = record.iter().collect::<Vec<&str>>().join(",");
-        let enumerated_lines: Vec<String> = enumerate_house_numbers(&line);
-
-        for enumerated_line in enumerated_lines {
-            if unique_lines.insert(enumerated_line.clone()) {
-                writer.write_record(enumerated_line.split(','))?;
+        for expanded in enumerate_house_numbers(&record) {
+            let key = record_dedup_key(&expanded);
+            if unique_lines.insert(key) {
+                writer.write_record(expanded.iter())?;
                 unique_line_count += 1;
 
-                // Check if the file has reached the maximum line count
                 if unique_line_count >= 1_000_000 {
                     writer.flush()?;
-                    info!("Reached maximum line count for file: {}", output_file_path);
+                    info!(
+                        "Reached maximum line count for file: {}",
+                        output_path.display()
+                    );
                     file_index += 1;
-                    output_file_path = format!("./data/data_nl_{}.csv", file_index);
-                    create_file_if_not_exists(&output_file_path)?;
-                    writer = csv::Writer::from_path(&output_file_path)?;
+                    output_path = data_dir.join(format!("data_nl_{}.csv", file_index));
+                    create_file_if_not_exists(output_path.to_str().ok_or("invalid output path")?)?;
+                    writer = csv::Writer::from_path(&output_path)?;
                     writer.write_record(&headers)?;
                     unique_line_count = 0;
                 }
@@ -131,7 +109,6 @@ pub async fn process_csv_files(
     writer.flush()?;
     info!("Processing complete");
     info!("Total unique lines written: {}", unique_lines.len());
-
     info!("Done!");
 
     Ok(())

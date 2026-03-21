@@ -1,32 +1,13 @@
-#![allow(unused_must_use)]
-
-use std::error::Error;
-use std::fs::File;
-use std::io::BufReader;
-use tracing::{error, info, warn};
-use tracing_subscriber::EnvFilter;
-
-use std::{io::Result, time::Duration};
-
-use actix_cors::Cors;
-use actix_files::NamedFile;
-use actix_web::body::{BoxBody, EitherBody};
-use actix_web::dev::{Service, ServiceResponse};
-use actix_web::http::header;
-use actix_web::web::Data;
-use actix_web::{get, web, App, HttpResponse, HttpServer, Responder};
-use moka::future::Cache;
+use actix_web::{get, HttpResponse, Responder};
 use serde_json::{json, Value};
-use std::env::var;
-use std::sync::Arc;
 use std::time::Instant;
-use tokio::sync::Mutex;
+use tracing::info;
 
 #[get("/")]
 pub async fn ping() -> impl Responder {
-    let start_time: Instant = Instant::now();
+    let start_time = Instant::now();
     info!("endpoint received request");
-    let latency: u128 = start_time.elapsed().as_millis();
+    let latency = start_time.elapsed().as_millis();
     let status_info: Value = json!({
         "status": "healthy",
         "message": "api.places.suitsbooks.nl is healthy",
